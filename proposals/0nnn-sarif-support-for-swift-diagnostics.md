@@ -39,7 +39,7 @@ SARIF's JSON representation eliminates the need for custom parsers and converter
 
 #### 4. Rich Information Model
 
-SARIF supports a rich information model that exceeds the capability of other diagnostic formats enabling expression of a variety of program contexts beyond the standard diagnostic metadata. 
+SARIF supports a rich information model that exceeds the capability of other diagnostic formats enabling expression of a variety of program contexts beyond the standard diagnostic metadata.
 
 * **Logical Locations**: Fully-qualified names of functions, types, and other programmatic constructs containing the diagnostic.
 * **Code Flow Paths**: Code execution paths for dataflow analysis diagnostics.
@@ -223,7 +223,7 @@ The corresponding `fixes` property of this error diagnostic will look like this.
 
 ## Implementation Plan
 
-We propose to implement support for the SARIF diagnostic format in the Swift compiler and associated tools by splitting the implementation across three primary components: `swift` (the Swift compiler), `sarif` library (to be created), and `swift-sarif` library (to be created), with the latter two new components serving as building blocks for the compiler implementation as well as all future clients and additional tools with a library-first design.
+We propose to implement support for the SARIF diagnostic format by splitting the work across two components: a new standalone `swift-sarif` library, and the changes that integrate it into the existing `swift` compiler repository. This split aligns with the naming and structural conventions used elsewhere in the Swift ecosystem and keeps the SARIF implementation reusable by clients beyond the compiler.
 
 ### 1. The Swift Compiler
 
@@ -231,15 +231,11 @@ We propose to make the following changes to the Swift compiler.
 
 1. We will add a new command-line flag, `--sarif-log=`*`path`*, for supplying the path of the SARIF file for serializing the diagnostics. Swift builds use incremental compilation and parallel execution to improve build performance. To avoid race conditions from concurrent compilation tasks, we will emit one SARIF file fragment per primary input source file. Only the relevant subset of these files will be updated during incremental compilation.
 2. We will introduce a new class, `SARIFDiagnosticConsumer`(`lib/Frontend/SARIFDiagnosticConsumer.cpp`), that will extend the `DiagnosticConsumer` interface to queue the diagnostics in the Swift-level `DiagnosticsBridge` as they are emitted by the compiler.
-3. We will modify `DiagnosticsBridge.swift` to add support for converting and serializing these diagnostics to SARIF by invoking the appropriate APIs from `swift-sarif` library. This will require the addition of `swift-sarif` as a dependency in the compiler.
+3. We will modify `DiagnosticsBridge.swift` to convert and serialize these diagnostics to SARIF by invoking the appropriate APIs from the `swift-sarif` library. This will require adding `swift-sarif` as a dependency in the compiler.
 
-### 2. `sarif` Library
+### 2. `swift-sarif` Library
 
-We will create a `sarif` library with the intention of providing general-purpose SARIF support in Swift to facilitate the development of warning management systems. It will provide the required subset of SARIF v2.1.0 schema, JSON serialization and deserialization support, and validation utilities for SARIF.
-
-### 3. `swift-sarif` Library
-
-While the changes to the Swift compiler will introduce support for queuing diagnostics as Swift objects with the intention of serializing them to SARIF, the actual conversion will be performed by the `swift-sarif` library. This ensures that the Swift compiler remains decoupled from SARIF format details. The conversion process will involve building an artifact catalog from all the diagnostics and expressing the relevant fields from diagnostic objects as SARIF. This library will import `swift-syntax` library for accessing Swift-level representation of diagnostics and `sarif` library for SARIF schema definitions.
+We will create a new standalone `swift-sarif` library with the intention of providing general-purpose SARIF support in Swift to facilitate the development of warning management systems. It will provide the required subset of SARIF v2.1.0 schema, JSON serialization and deserialization support, and validation utilities for SARIF.
 
 ## Future Implementation Work
 
@@ -265,6 +261,10 @@ One of SARIF's key features is its support for tracking suppressed diagnostics, 
 
 A limitation imposed by SARIF’s JSON representation is that the SARIF logs will be larger than their equivalent LLVM-bitstream versions. We can address this in the future by providing comprehensive filtering mechanisms for SARIF generation to ensure that the logs only contain the information needed for downstream processing. We can also explore the possibility of storing SARIF logs in a compressed format.
 
+### 6. Emitting SARIF Diagnostics by Default
+
+The current proposal introduces SARIF as an opt-in format alongside the existing LLVM bitstream diagnostics. In the future, we expect to be able to make SARIF the default machine-readable diagnostic format emitted by the Swift compiler.
+
 ## Alternatives Considered
 
-The Swift compiler already implements LLVM bitstream serialization for its diagnostics. While it is attractive to consider extending this format as needed, it will require substantial effort to match SARIF's capabilities. Furthermore, it's not an industry standard and has limited adoption outside of the `clang` ecosystem.
+We are not aware of any popular general-purpose machine-readable diagnostic format other than SARIF. It is attractive to consider extending the LLVM bitstream serialization support already used by the Swift compiler. Unfortunately, doing so will require substantial effort to match SARIF's capabilities. Furthermore, it's not an industry standard and has limited adoption outside of the `clang` ecosystem. All three major C++ compilers already support SARIF diagnostic output, and we have no reason to handle diagnostics differently for Swift.
